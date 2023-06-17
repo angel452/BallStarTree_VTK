@@ -43,11 +43,24 @@ class pca_t
             projection_matrix = W.topRows(input_matrix.cols()) * centered_matrix.adjoint();
         }
 
-
         Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> reprojection()
         {
-            return projection_matrix.transpose() * eigen_vectors + get_mean();
+            //return projection_matrix.transpose() * eigen_vectors + get_mean();
+            return projection_matrix.transpose() * eigen_vectors;
             //return (eigen_vectors * projection_matrix + get_mean().transpose()).transpose();
+        }
+
+        Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> reprojection2()
+        {
+            //Eigen::Matrix<float, npuntos, ndim> tempMatrix = centered_matrix; // solo de base
+            reprojection_matrix = input_matrix;
+            for(int i = 0; i < input_matrix.rows(); i++){
+                for(int j = 0; j < input_matrix.cols(); j++){
+                    //cout << projection_matrix(0,i) << " * " << eigen_vectors(j,0) << " = " << projection_matrix(0,i) * eigen_vectors(j,0) + mean_matrix(i,j) << endl;
+                    reprojection_matrix(i,j) = projection_matrix(0,i) * eigen_vectors(j,0);
+                }
+            }
+            return reprojection_matrix + get_mean();
         }
 
         const Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& get_input_matrix() const { return input_matrix; }
@@ -66,6 +79,7 @@ class pca_t
         Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> mean_matrix;
         Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> covariance_matrix;
         Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> projection_matrix;
+        Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> reprojection_matrix;
 
         Eigen::Matrix<Type, 1, Eigen::Dynamic> eigen_values;
         Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> eigen_vectors;

@@ -21,7 +21,10 @@
 #include <string>
 #include <fstream>
 
+// ######################## PCA LIBRARIES #######################
 #include "pca.h"
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
 
 using namespace std;
 
@@ -57,9 +60,9 @@ struct Point{
 
 template <typename T, int ndim>
 struct Node{
-    int nPuntos;
-    int M;
-    bool isLeaf;
+    int nPuntos; // numero de puntos en el nodo
+    int M; // Maximo de modos por nodo
+    bool isLeaf; // si es hoja o no
 
     vector< Point<ndim> > grupoRecords;
     vector< Node<T, ndim> > grupoHijos;
@@ -97,12 +100,24 @@ struct Node{
     void getCircleInfo(Node<T, ndim> *ptr){
         // Obtener el punto central
         for(int i = 0; i < ndim; i++){
-            float pntoCentralAux = 0;
-            for(int j = 0; j < ptr->nPuntos; j++){
-                pntoCentralAux = pntoCentralAux + ptr->grupoRecords[j][i];
+            float pntoCentralAux;
+            float minPoint = ptr->grupoRecords[0][i];
+            float maxPoint = ptr->grupoRecords[0][i];
+            for(int j = 1; j < ptr->nPuntos; j++){
+                float minPointAux = ptr->grupoRecords[j][i];
+                float maxPointAux = ptr->grupoRecords[j][i];
+
+                if(minPointAux < minPoint){
+                    minPoint = minPointAux;
+                }
+                if(maxPointAux > maxPoint){
+                    maxPoint = maxPointAux;
+                }
+                //pntoCentralAux = pntoCentralAux + ptr->grupoRecords[j][i];
             }
-            pntoCentralAux = pntoCentralAux/ptr->nPuntos;
-            puntoCentral[i] = pntoCentralAux;
+            pntoCentralAux = (maxPoint + minPoint)/2;
+            //pntoCentralAux = pntoCentralAux/ptr->nPuntos;
+            ptr->puntoCentral[i] = pntoCentralAux;
         }
 
         // Obtener el radio
@@ -114,6 +129,9 @@ struct Node{
             }
         }
         ptr->radio = maxDistance;
+
+        // Mostrar la informacion
+        cout << "El punto central es: "; ptr->puntoCentral.printPoint();
         cout << "El radio es: " << ptr->radio << endl;
     }
 
@@ -123,18 +141,145 @@ struct Node{
         ptr->isLeaf = false;
     }
 
+    // ################### ALGORITMO ORDENAMIENTO QUICKSORT ###################################
+    int particion(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> &reprojectPoints, int inicio, int final, Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> &OriginalPoints){
+        float pivote = reprojectPoints(inicio, 0); // El pivote sera el primer elemento
+        int aux = inicio + 1;
+        // Recorremos desde el pivote hasta el final
+        for(int i = aux; i <= final; i++){
+            if(reprojectPoints(i, 0) < pivote){
+                // Intercambiamos los valores de la matriz de puntos proyectados
+                reprojectPoints.row(aux).swap(reprojectPoints.row(i));
+                // Interacambiamos los valores de la matriz de puntos originales
+                OriginalPoints.row(aux).swap(OriginalPoints.row(i));
+                aux++;
+            }
+        }
+        reprojectPoints.row(inicio).swap(reprojectPoints.row(aux-1));
+        OriginalPoints.row(inicio).swap(OriginalPoints.row(aux-1));
+        return aux-1;
+    }
+
+    void quickSort(Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> &reprojectPoints, int inicio, int final, Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> &OriginalPoints ){
+        if(inicio < final){
+            int pivote = particion(reprojectPoints, inicio, final, OriginalPoints);
+            quickSort(reprojectPoints, inicio, pivote-1, OriginalPoints);
+            quickSort(reprojectPoints, pivote+1, final, OriginalPoints);
+        }
+    }
+    // ##########################################################################################
+
+    pair<Node, Node> splitPCA(Node<T, ndim> *ptr){
+
+        pair<Node, Node> resultSplit;
+
+        cout << "Calculando PCA" << endl;
+        // --> Variables:
+        const int nPuntosAux = ptr->nPuntos;
+        Eigen::MatrixXf pca_data_matrix(nPuntosAux, ndim);
+        Eigen::MatrixXf pca_center_matrix(nPuntosAux, ndim);
+
+        // --> Input Matrix:
+        for(int i = 0; i < nPuntosAux; i++){
+            for(int j = 0; j < ndim; j++){
+                pca_data_matrix(i, j) = ptr->grupoRecords[i][j];
+                //pca_data_matrix << ptr->grupoRecords[i][j];
+            }
+        }
+        // --> PCA:
+        pca_t<float> pca;
+        pca.set_input(pca_data_matrix);
+        pca.compute();
+
+        /*
+        std::cout
+                << "Input Matrix:		\n" << pca.get_input_matrix() << std::endl << std::endl
+                << "Centered Matrix:	\n" << pca.get_centered_matrix() << std::endl << std::endl
+                << "Covariance Matrix:	\n" << pca.get_covariance_matrix() << std::endl << std::endl
+                << "Projection Matrix:	\n" << pca.get_projection_matrix() << std::endl << std::endl
+                << "Mean Matrix:		\n" << pca.get_mean() << std::endl << std::endl
+                << "Eigen Values:		\n" << pca.get_eigen_values() << std::endl << std::endl
+                << "Eigen Vectors:		\n" << pca.get_eigen_vectors() << std::endl << std::endl;
+        */
+
+        //const auto& reprojection = pca.reprojection2();
+        Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic> reprojection = pca.reprojection2();
+        //std::cout << "Reprojected Matrix:	\n" << reprojection << std::endl << std::endl;
+
+        // --> Ordenar los puntos segun la primera columna de la matriz reprojection
+        quickSort(reprojection, 0, (ptr->nPuntos)-1, pca_data_matrix);
+
+        /*
+        std::cout
+                << "Reprojected Matrix Ordered:	\n" << reprojection << std::endl << std::endl
+                << "Original Matrix Ordered:	\n" << pca_data_matrix << std::endl << std::endl;
+        */
+
+        // --> Separar hijos
+        // 1. Crear hijo Izquierdo
+        Node<T, ndim> leftChild;
+        Node<T, ndim> *ptrLeftChild;
+        Node<T, ndim> auxNode1(M);
+        leftChild = auxNode1;
+        ptrLeftChild = &leftChild;
+
+        // 2. Crear hijo Derecho
+        Node<T, ndim> rightChild;
+        Node<T, ndim> *ptrRightChild;
+        Node<T, ndim> auxNode2(M);
+        rightChild = auxNode2;
+        ptrRightChild = &rightChild;
+
+        // --> Insertar puntos en los hijos
+        // 1. Insertar puntos en el hijo izquierdo
+        for(int i = 0; i < (ptr->nPuntos)/2; i++){
+            Point<ndim> auxPoint;
+            for(int j = 0; j < ndim; j++){
+                auxPoint[j] = pca_data_matrix(i, j);
+            }
+            ptrLeftChild->grupoRecords.push_back(auxPoint);
+            ptrLeftChild->nPuntos++;
+            //insertToNode(auxPoint, ptrLeftChild);
+        }
+
+        // 2. Insertar puntos en el hijo derecho
+        for(int i = (ptr->nPuntos)/2; i < ptr->nPuntos; i++){
+            Point<ndim> auxPoint;
+            for(int j = 0; j < ndim; j++){
+                auxPoint[j] = pca_data_matrix(i, j);
+            }
+            ptrRightChild->grupoRecords.push_back(auxPoint);
+            ptrRightChild->nPuntos++;
+            //insertToNode(auxPoint, ptrRightChild);
+        }
+
+        // 3. Recalcular CircleInfo
+        getCircleInfo(ptrLeftChild);
+        getCircleInfo(ptrRightChild);
+
+        cout << "Primer hijo" << endl;
+        printPointsNode(ptrLeftChild);
+        cout << "Segundo hijo" << endl;
+        printPointsNode(ptrRightChild);
+
+        resultSplit.first = leftChild;
+        resultSplit.second = rightChild;
+        return resultSplit;
+    }
+
     void createEstructure(Node *ptr){
         // --> Print all Points
-        cout << "All points" << endl;
         printPointsNode(ptr);
+        cout << "All Points are Inserted" << endl << endl;
 
         // 1. GetCircleInfo
         getCircleInfo(ptr);
-        cout << "El punto centroal es: ";
-        ptr->puntoCentral.printPoint();
 
         // 2. Split
-
+        cout << endl;
+        pair<Node, Node> resultSplit = splitPCA(ptr);
+        ptr->grupoHijos.push_back(resultSplit.first);
+        ptr->grupoHijos.push_back(resultSplit.second);
     }
 
     void knnSearch( Point<ndim> recordBase , Node<T, ndim> *ptr, int Nvecinos){
@@ -143,6 +288,15 @@ struct Node{
 
     void getMBRCircle( Node<T, ndim> *ptr ){
         if(ptr->isLeaf){
+            cout << "Es hoja" << endl;
+            vector<float> circleAux2;
+            circleAux2.push_back( ptr->puntoCentral[0] );
+            circleAux2.push_back( ptr->puntoCentral[1] );
+            circleAux2.push_back( 0 );
+            circleAux2.push_back( ptr->radio );
+
+            allCircleInformation.push_back(circleAux2);
+
             return;
         }
         else{
@@ -243,6 +397,7 @@ int main(int argc, char* argv[])
     // ########################## LECTURA .SVG ##################################
 
     string filename = "testData.csv";
+    //string filename = "testData2.csv";
     ifstream in(filename);
     string song_name;
     float pntoX, pntoY, pntoZ;
@@ -275,7 +430,6 @@ int main(int argc, char* argv[])
     */
 
     // ######################## CREAR ESTRUCTURA ###############################
-    cout << "Puntos insertados en el root ..." << endl;
     test1._createEstructure();
 
     // ###################### BUSCAR KNN MAS CERCANO ##########################
@@ -303,6 +457,7 @@ int main(int argc, char* argv[])
     renderer->AddActor(actor);
 
     test1.getMBRCircle2();
+    cout << "La cantidad de circulos es: " << allCircleInformation.size() << endl;
     for(int i = 0; i < allCircleInformation.size(); i++){
         float x = allCircleInformation[i][0];
         float y = allCircleInformation[i][1];
