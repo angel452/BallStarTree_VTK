@@ -48,9 +48,10 @@ struct Point{
 
     void printPoint(){
         for(int i = 0; i < ndim; i++){
-            cout << puntos[i] << '\t';
+            //cout << puntos[i] << '\t';
+            cout << puntos[i] << "  ";
         }
-        cout << endl;
+        //cout << endl;
     }
 
     float &operator[](int posicion){
@@ -82,9 +83,12 @@ struct Node{
     // ################### PRINT FUNCTIONS ###################################
     void printPointsNode( Node<T, ndim> *ptr ){
         for(int i = 0; i < ptr->nPuntos; i++){
-            cout << i+1 << ". " << '\t';
+            //cout << i+1 << ". " << '\t';
+            cout << "( " ;
             ptr->grupoRecords[i].printPoint();
+            cout << ")";
         }
+        cout << endl;
     }
 
     // ################### PRINT FUNCTIONS ###################################
@@ -130,10 +134,13 @@ struct Node{
         }
         ptr->radio = maxDistance;
 
+        /*
         // Mostrar la informacion
-        cout << "El punto central es: "; ptr->puntoCentral.printPoint();
+        cout << "El punto central es: "; ptr->puntoCentral.printPoint(); cout << endl;
         cout << "El radio es: " << ptr->radio << endl;
-    }
+        cout << "El numero de puntos dentro es: " << ptr->nPuntos << endl;
+        */
+     }
 
     void insertToNode( Point<ndim> record, Node<T, ndim> *ptr ){
         ptr->grupoRecords.push_back(record);
@@ -173,7 +180,6 @@ struct Node{
 
         pair<Node, Node> resultSplit;
 
-        cout << "Calculando PCA" << endl;
         // --> Variables:
         const int nPuntosAux = ptr->nPuntos;
         Eigen::MatrixXf pca_data_matrix(nPuntosAux, ndim);
@@ -253,33 +259,50 @@ struct Node{
             //insertToNode(auxPoint, ptrRightChild);
         }
 
-        // 3. Recalcular CircleInfo
-        getCircleInfo(ptrLeftChild);
-        getCircleInfo(ptrRightChild);
-
-        cout << "Primer hijo" << endl;
-        printPointsNode(ptrLeftChild);
-        cout << "Segundo hijo" << endl;
-        printPointsNode(ptrRightChild);
-
         resultSplit.first = leftChild;
         resultSplit.second = rightChild;
+
         return resultSplit;
     }
 
     void createEstructure(Node *ptr){
         // --> Print all Points
+        cout << "Points in node..." << endl;
         printPointsNode(ptr);
-        cout << "All Points are Inserted" << endl << endl;
 
         // 1. GetCircleInfo
         getCircleInfo(ptr);
+        cout << "El punto central es: "; ptr->puntoCentral.printPoint(); cout << endl;
+        cout << "El radio es: " << ptr->radio << endl;
+        cout << "El numero de puntos dentro es: " << ptr->nPuntos << endl;
 
         // 2. Split
         cout << endl;
-        pair<Node, Node> resultSplit = splitPCA(ptr);
-        ptr->grupoHijos.push_back(resultSplit.first);
-        ptr->grupoHijos.push_back(resultSplit.second);
+
+        if((ptr->nPuntos)/2 >= M){
+            cout << "--- El nodo actual se puede dividir ---" << endl << endl;
+            pair<Node, Node> resultSplit = splitPCA(ptr);
+
+            // --> Insertamos los hijos al nodo actual
+            ptr->grupoHijos.push_back(resultSplit.first);
+            ptr->grupoHijos.push_back(resultSplit.second);
+
+            // --> Creamos punteros a los hijos
+            Node<T, ndim> *ptrLeftChild = &ptr->grupoHijos[0];
+            Node<T, ndim> *ptrRightChild = &ptr->grupoHijos[1];
+
+            ptrLeftChild->isLeaf = false;
+            createEstructure(ptrLeftChild);
+
+            ptrRightChild->isLeaf = false;
+            createEstructure(ptrRightChild);
+
+        }
+        else{
+            cout << "El nodo actual no se puede dividir mas " << endl;
+        }
+
+        cout << endl;
     }
 
     void knnSearch( Point<ndim> recordBase , Node<T, ndim> *ptr, int Nvecinos){
@@ -288,7 +311,7 @@ struct Node{
 
     void getMBRCircle( Node<T, ndim> *ptr ){
         if(ptr->isLeaf){
-            cout << "Es hoja" << endl;
+            //cout << "Es hoja" << endl;
             vector<float> circleAux2;
             circleAux2.push_back( ptr->puntoCentral[0] );
             circleAux2.push_back( ptr->puntoCentral[1] );
@@ -309,7 +332,7 @@ struct Node{
             allCircleInformation.push_back(circleAux);
 
             for(int i = 0; i < ptr->grupoHijos.size(); i++){
-                cout << "Recorriendo hijo" << i+1 << endl;
+                //cout << "Recorriendo hijo" << i+1 << endl;
                 Node<T, ndim> *pntauxPrint;
                 pntauxPrint = &ptr->grupoHijos[i];
                 getMBRCircle(pntauxPrint);
@@ -385,7 +408,7 @@ int main(int argc, char* argv[])
     }
 
     // ######################### BALL STAR TREE #################################
-    const int M = 10; // maximo numero de puntos por nodo
+    const int M = 18; // maximo numero de puntos por nodo
     const int ndim = 3;
     //const int ndim = 12;
 
@@ -464,6 +487,8 @@ int main(int argc, char* argv[])
         float z = 0;
         float radius = allCircleInformation[i][3];
 
+        cout << "Info Circulo " << i+1 << ": " << x << " " << y << " " << z << " " << radius << endl;
+
         renderer->AddActor(drawCircle(x,y,z,radius));
     }
     //renderer->AddActor(drawCircle(10,10,0,10));
@@ -482,3 +507,11 @@ int main(int argc, char* argv[])
 
     return EXIT_SUCCESS;
 }
+
+/*
+ * Canciones para buscar
+ * Where Is The Love?
+ * Bitch Better Have My Money
+ * FourFiveSeconds
+ * We Own It (Fast & Furious)
+ */
